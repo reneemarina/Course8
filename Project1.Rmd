@@ -1,0 +1,123 @@
+---
+title: "Coursera Practical Machine Learning Assignment"
+author: "Renee Marina"
+output:
+  html_document:
+    keep_md: yes
+    pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Overview
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project,the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participantsand predict the manner in which they did the exercise as well as to create prediction model to predict 20 different test cases. The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. 
+
+##1. Prepare the libraries necessary to complete the analysis
+
+```{r library}
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+set.seed(12345)
+```
+
+
+##2. Load the data and create training and testing data sets
+```{r dataload}
+UrlTrain <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+UrlTest  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- read.csv(url(UrlTrain))
+testing  <- read.csv(url(UrlTest))
+inTrain  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+TrainSet <- training[inTrain, ]
+TestSet  <- training[-inTrain, ]
+dim(TrainSet); dim(TestSet)
+```
+
+The dimentions above show that both sets have 160 variables, respectively. The next step is to remove NA, NZV (Near Zero Variance), and any unnecesary info.
+
+##Clean up the data from any NA, NZV, or unnecessary info.
+
+```{r remove}
+#remove NZV
+NZV <- nearZeroVar(TrainSet)
+TrainSet <- TrainSet[, -NZV]
+TestSet  <- TestSet[, -NZV]
+
+##remove NA
+DataNA <- sapply(TrainSet, function(x) mean(is.na(x))) > 0.95
+TrainSet <- TrainSet[, DataNA==FALSE]
+TestSet  <- TestSet[, DataNA==FALSE]
+
+##remove variables between columns 1 to 5 (unnecessary)
+TrainSet <- TrainSet[, -(1:5)]
+TestSet  <- TestSet[, -(1:5)]
+
+dim(TrainSet)
+dim(TestSet)
+```
+
+After data cleanup, there are 54 variables for the analysis.
+
+##4. Build Prediction Models (Random Forests, Decision Tree and Generalized Boosted Model)
+
+##4.1 Random Forest
+```{r RF}
+set.seed(12345)
+controlRF <- trainControl(method="cv", number=3)
+modFitRF <- train(classe ~ ., data=TrainSet, method="rf",trControl=controlRF, verbose = FALSE)
+modFitRF$finalModel
+
+predictRF <- predict(modFitRF, newdata=TestSet)
+confMatRF <- confusionMatrix(predictRF,TestSet$classe)
+confMatRF
+
+plot(confMatRF$table, col = confMatRF$byClass,main = paste("Random Forest - Accuracy =", round(confMatRF$overall['Accuracy'], 4)))
+```
+
+##4.2 Decision Tree
+```{r DT}
+set.seed(12345)
+modFitDT <- rpart(as.factor(classe) ~ .,data=TrainSet, method="class")
+fancyRpartPlot(modFitDT)
+
+predictDT <- predict(modFitDT, newdata=TestSet, type="class")
+confMatDT <- confusionMatrix(predictDT,TestSet$classe)
+confMatDT
+
+plot(confMatDT$table, col =confMatDT$byClass, main = paste("Decision Tree - Accuracy =", round(confMatDT$overall['Accuracy'], 4)))
+```
+
+##4.3 Generalized Boosted Model
+```{r GBM}
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modFitGBM  <- train(classe ~ ., data=TrainSet, method = "gbm", trControl = controlGBM, verbose = FALSE)
+modFitGBM$finalModel
+
+predictGBM <- predict(modFitGBM, newdata=TestSet)
+confMatGBM <- confusionMatrix(predictGBM,TestSet$classe)
+confMatGBM
+
+plot(confMatGBM$table, col = confMatGBM$byClass,main = paste("GBM - Accuracy =", round(confMatGBM$overall['Accuracy'], 4)))
+```
+
+##5. Conclusion
+The Accuracy and the Expected Out-of-Sample Error (EOSE) of the 3 regression modeling methods used above are shown below:
+Random Forest : Accuracy = 0.9964; EOSE = 100 - 99.64 = 0.36
+Decision Tree : Accuracy = 0.7368; EOSE = 100 - 73.68 = 26.32
+GBM : Accuracy = 0.9857; EOSE = 100 - 98.57 = 1.43
+
+From the above, we can see that the Random Forest model produces the highest accuracy level, which will be applied to predict the 20 quiz results (testing dataset).
+
+```{r RFquiz}
+predictTEST <- predict(modFitRF, newdata=testing)
+predictTEST
+```
